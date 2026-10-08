@@ -229,7 +229,8 @@
 
   <section class="player" id="player" aria-hidden="true">
     <div class="frame" id="frame">
-      <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+      <video id="vid" playsinline webkit-playsinline muted preload="auto"></video>
+      <audio id="music" preload="auto"></audio>
       <button class="mute" id="mute" type="button" aria-pressed="false" aria-label="قطع و وصل صدا">
         <svg class="on-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
         <svg class="off-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
@@ -282,6 +283,16 @@
   const names=['invitation.mp4','Invitation.mp4','invitation.MP4','invitation (1).mp4','invitation(1).mp4','invitation-1.mp4'];
   let ni=0; vid.src=names[0];
   vid.addEventListener('error',()=>{ if(ni<names.length-1){ ni++; vid.src=names[ni]; vid.load(); } });
+  /* ---- music: one continuous track from the seal tap to the closing page ----
+     the first PRE seconds play while the envelope opens; the film starts at PRE */
+  const music = document.getElementById('music');
+  const PRE = 8.15;
+  const mnames=['music.m4a','Music.m4a','music (1).m4a','music(1).m4a','music-1.m4a'];
+  let mi=0, musicOK=true; music.src=mnames[0];
+  music.addEventListener('error',()=>{ if(mi<mnames.length-1){ mi++; music.src=mnames[mi]; music.load(); } else { musicOK=false; useFilmSound(); } });
+  vid.muted = true; vid.defaultMuted = true;
+  function useFilmSound(){ vid.muted = false; }          // fallback: the film's own soundtrack
+  function musicPlay(at){ if(!musicOK) return; try{ if(at!=null) music.currentTime=at; }catch(e){} const q=music.play(); if(q&&q.catch) q.catch(()=>{}); }
 
   /* ---- countdown to Wednesday 11 Azar 1405, 19:00 Tehran ---- */
   const target = new Date('2026-12-02T19:00:00+03:30').getTime();
@@ -316,7 +327,7 @@
   }
   seal.addEventListener('click', ()=>{
     if (opened) return; opened=true;
-    vid.muted=false;
+    musicPlay(0);
     const p = vid.play(); if (p && p.then) p.then(()=>{ if (!started){ vid.pause(); vid.currentTime=0; } }).catch(()=>{});
     setK();
     const T = reduce ? [0,0,0,0,0] : [0, 1000, 3550, 4950, 6950];
@@ -434,16 +445,27 @@
   }
   function startVideo(){
     started=true;
-    try{ vid.currentTime=0; }catch(e){}
+    let at=0;
+    if (musicOK && !music.paused){ const ahead=music.currentTime-PRE; if (ahead>0) at=Math.min(ahead,2); else musicPlay(PRE); }
+    else if (musicOK) musicPlay(PRE);
+    try{ vid.currentTime=at; }catch(e){}
     const p=vid.play();
-    if (p && p.catch) p.catch(()=>{ vid.muted=true; $('mute').setAttribute('aria-pressed','true'); vid.play().catch(()=>showTap()); });
+    if (p && p.catch) p.catch(()=>{ vid.muted=true; vid.play().catch(()=>showTap()); });
     // if it still is not playing after a moment, offer a tap-to-play button
     setTimeout(()=>{ if (vid.paused && !vid.ended) showTap(); }, 2500);
   }
   function showTap(){ $('tap').classList.add('on'); }
-  $('tap').addEventListener('click', ()=>{ $('tap').classList.remove('on'); vid.muted=false; $('mute').setAttribute('aria-pressed','false'); vid.play().catch(()=>{ vid.muted=true; vid.play(); }); });
-  vid.addEventListener('playing', ()=>{ $('tap').classList.remove('on'); $('wait').classList.remove('on'); });
-  vid.addEventListener('waiting', ()=>{ if(started) $('wait').classList.add('on'); });
+  $('tap').addEventListener('click', ()=>{ $('tap').classList.remove('on'); if(musicOK){ musicPlay(PRE+vid.currentTime); } else { vid.muted=false; } $('mute').setAttribute('aria-pressed','false'); vid.play().catch(()=>{ vid.muted=true; vid.play(); }); });
+  vid.addEventListener('playing', ()=>{ $('tap').classList.remove('on'); $('wait').classList.remove('on');
+    if (started && musicOK && music.paused && !vid.ended){ musicPlay(PRE+vid.currentTime); } });
+  vid.addEventListener('waiting', ()=>{ if(started){ $('wait').classList.add('on'); if(musicOK && !vid.ended) music.pause(); } });
+  vid.addEventListener('timeupdate', ()=>{
+    if (!started || !musicOK || music.paused || vid.paused || vid.ended) return;
+    const d=(music.currentTime-PRE)-vid.currentTime;            // + : music is ahead of the film
+    if (Math.abs(d)>1.2){ try{ vid.currentTime=music.currentTime-PRE; }catch(e){} vid.playbackRate=1; }
+    else vid.playbackRate = Math.abs(d)<0.06 ? 1 : 1+Math.max(-0.06,Math.min(0.06,d*0.5));
+  });
+  vid.addEventListener('ended', ()=>{ vid.playbackRate=1; });
   vid.addEventListener('error', ()=>{ setTimeout(()=>{ if (vid.error){ $('wait').classList.remove('on'); $('tap').classList.remove('on'); $('err').classList.add('on'); } }, 1500); });
   if(false){
   }
@@ -462,9 +484,11 @@
   function showEnd(){ if (endShown) return; endShown = true; fitPhoto(); end.classList.add('on'); frame.classList.add('ended'); }
   vid.addEventListener('timeupdate', ()=>{ if (vid.currentTime >= END_AT) showEnd(); });
   vid.addEventListener('ended', showEnd);
-  $('replay').addEventListener('click', ()=>{ endShown=false; end.classList.remove('on'); frame.classList.remove('ended'); void end.offsetWidth; $('maps').classList.remove('open'); $('route').setAttribute('aria-expanded','false'); vid.currentTime=0; vid.play(); });
+  $('replay').addEventListener('click', ()=>{ endShown=false; end.classList.remove('on'); frame.classList.remove('ended'); void end.offsetWidth; $('maps').classList.remove('open'); $('route').setAttribute('aria-expanded','false'); vid.currentTime=0; vid.playbackRate=1; musicPlay(PRE); vid.play(); });
   $('route').addEventListener('click', ()=>{ const o=$('maps').classList.toggle('open'); $('route').setAttribute('aria-expanded', String(o)); });
-  $('mute').addEventListener('click', ()=>{ vid.muted=!vid.muted; $('mute').setAttribute('aria-pressed', String(vid.muted)); });
+  $('mute').addEventListener('click', ()=>{
+    if (musicOK){ music.muted=!music.muted; $('mute').setAttribute('aria-pressed', String(music.muted)); }
+    else { vid.muted=!vid.muted; $('mute').setAttribute('aria-pressed', String(vid.muted)); } });
 
   /* ---- rain of light ---- */
   const sparks=[];
