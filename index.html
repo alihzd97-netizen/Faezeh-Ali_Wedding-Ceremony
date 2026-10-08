@@ -283,8 +283,8 @@
   let ni=0; vid.src=names[0];
   vid.addEventListener('error',()=>{ if(ni<names.length-1){ ni++; vid.src=names[ni]; vid.load(); } });
 
-  /* ---- countdown to Thursday 23 Mehr 1405, 19:00 Tehran ---- */
-  const target = new Date('2026-10-15T19:00:00+03:30').getTime();
+  /* ---- countdown to Wednesday 11 Azar 1405, 19:00 Tehran ---- */
+  const target = new Date('2026-12-02T19:00:00+03:30').getTime();
   const fa = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
   function tick(){
     const ms = target - Date.now();
